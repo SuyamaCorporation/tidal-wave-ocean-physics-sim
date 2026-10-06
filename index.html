@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tidal Wave Ocean Physics Simulator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    canvas { display: block; }
+    input[type=range] { accent-color: #38bdf8; }
+  </style>
+</head>
+<body class="bg-slate-900 text-gray-100 min-h-screen flex flex-col">
+  <header class="bg-blue-900 py-3 px-6 shadow-lg">
+    <h1 class="text-xl font-bold text-blue-100">Tidal Wave Ocean Physics Simulator</h1>
+    <p class="text-xs text-blue-300">Simplified shallow-water wave model with interference</p>
+  </header>
+
+  <main class="flex-1 flex flex-col lg:flex-row gap-4 p-4 max-w-6xl mx-auto w-full">
+    <!-- Controls -->
+    <aside class="lg:w-72 flex flex-col gap-3" aria-label="Wave controls">
+      <div class="bg-slate-800 rounded-xl p-4">
+        <h2 class="font-semibold text-blue-300 mb-3 text-sm uppercase tracking-wider">Wave 1</h2>
+        <div class="space-y-3">
+          <label class="block text-xs">
+            <span class="text-gray-300">Amplitude: <strong id="amp1Val">40</strong> px</span>
+            <input type="range" id="amp1" min="5" max="100" value="40" class="w-full mt-1" aria-label="Wave 1 amplitude" />
+          </label>
+          <label class="block text-xs">
+            <span class="text-gray-300">Wavelength: <strong id="wl1Val">200</strong> px</span>
+            <input type="range" id="wl1" min="50" max="600" value="200" class="w-full mt-1" aria-label="Wave 1 wavelength" />
+          </label>
+          <label class="block text-xs">
+            <span class="text-gray-300">Speed: <strong id="spd1Val">1.0</strong> ×</span>
+            <input type="range" id="spd1" min="1" max="50" value="10" class="w-full mt-1" aria-label="Wave 1 speed" />
+          </label>
+        </div>
+      </div>
+
+      <div class="bg-slate-800 rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold text-cyan-300 text-sm uppercase tracking-wider">Wave 2 (Interference)</h2>
+          <label class="flex items-center gap-1 cursor-pointer">
+            <input type="checkbox" id="enableWave2" class="accent-cyan-400 w-4 h-4" aria-label="Enable wave 2" />
+            <span class="text-xs">On</span>
+          </label>
+        </div>
+        <div class="space-y-3" id="wave2Controls">
+          <label class="block text-xs">
+            <span class="text-gray-300">Amplitude: <strong id="amp2Val">30</strong> px</span>
+            <input type="range" id="amp2" min="5" max="100" value="30" class="w-full mt-1" aria-label="Wave 2 amplitude" />
+          </label>
+          <label class="block text-xs">
+            <span class="text-gray-300">Wavelength: <strong id="wl2Val">120</strong> px</span>
+            <input type="range" id="wl2" min="50" max="600" value="120" class="w-full mt-1" aria-label="Wave 2 wavelength" />
+          </label>
+          <label class="block text-xs">
+            <span class="text-gray-300">Speed: <strong id="spd2Val">1.5</strong> × (opposite direction)</span>
+            <input type="range" id="spd2" min="1" max="50" value="15" class="w-full mt-1" aria-label="Wave 2 speed" />
+          </label>
+        </div>
+      </div>
+
+      <div class="bg-slate-800 rounded-xl p-4 text-xs space-y-2">
+        <h2 class="font-semibold text-teal-300 text-sm uppercase tracking-wider mb-2">Display</h2>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="showGrid" class="accent-teal-400 w-4 h-4" aria-label="Show grid" />
+          <span>Show grid</span>
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="fillOcean" checked class="accent-teal-400 w-4 h-4" aria-label="Fill ocean" />
+          <span>Fill ocean body</span>
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="showInfo" checked class="accent-teal-400 w-4 h-4" aria-label="Show wave info" />
+          <span>Show wave info overlay</span>
+        </label>
+        <button id="pauseBtn" class="mt-2 w-full bg-blue-700 hover:bg-blue-600 text-white px-3 py-2 rounded-lg transition font-semibold" aria-label="Pause simulation">Pause</button>
+      </div>
+
+      <div class="bg-slate-800 rounded-xl p-3 text-xs text-gray-400">
+        <p class="font-semibold text-gray-300 mb-1">Physics Model</p>
+        <p>Simplified shallow-water: superposition of sinusoidal waves. Height h(x,t) = A·sin(2π(x/λ − t·v/λ)). Interference shown when Wave 2 is enabled.</p>
+      </div>
+    </aside>
+
+    <!-- Canvas -->
+    <div class="flex-1 flex flex-col gap-3">
+      <canvas id="waveCanvas" class="w-full rounded-xl shadow-2xl" width="900" height="420" role="img" aria-label="Animated wave simulation canvas"></canvas>
+      <!-- Height indicator -->
+      <div class="bg-slate-800 rounded-xl p-3 flex gap-4 text-xs font-mono flex-wrap">
+        <span>Peak Height (W1): <strong id="peakH1" class="text-sky-300">—</strong></span>
+        <span>Peak Height (W2): <strong id="peakH2" class="text-cyan-300">—</strong></span>
+        <span>Max Combined: <strong id="peakComb" class="text-yellow-300">—</strong></span>
+        <span>Phase: <strong id="phaseDisp" class="text-green-300">—</strong> rad</span>
+      </div>
+    </div>
+  </main>
+
+<script>
+const canvas = document.getElementById('waveCanvas');
+const ctx = canvas.getContext('2d');
+let paused = false;
+let t = 0;
+let animId;
+
+function getVal(id) { return parseFloat(document.getElementById(id).value); }
+function getChecked(id) { return document.getElementById(id).checked; }
+
+function bindSlider(id, displayId, scale) {
+  const el = document.getElementById(id);
+  const disp = document.getElementById(displayId);
+  function update() { disp.textContent = (parseFloat(el.value) * scale).toFixed(1); }
+  el.addEventListener('input', update);
+  update();
+}
+
+bindSlider('amp1', 'amp1Val', 1);
+bindSlider('wl1', 'wl1Val', 1);
+bindSlider('spd1', 'spd1Val', 0.1);
+bindSlider('amp2', 'amp2Val', 1);
+bindSlider('wl2', 'wl2Val', 1);
+bindSlider('spd2', 'spd2Val', 0.1);
+
+function waveHeight(x, t, amp, wl, speed, dir) {
+  const k = (2 * Math.PI) / wl;
+  const omega = k * speed * 0.1;
+  return amp * Math.sin(k * x - dir * omega * t);
+}
+
+function drawWave() {
+  const W = canvas.width;
+  const H = canvas.height;
+  const mid = H * 0.55;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background gradient (sky + deep sea)
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+  skyGrad.addColorStop(0, '#0c1a2e');
+  skyGrad.addColorStop(0.45, '#0d2847');
+  skyGrad.addColorStop(1, '#061020');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  if (getChecked('showGrid')) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y <= H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  }
+
+  const amp1 = getVal('amp1');
+  const wl1  = getVal('wl1');
+  const spd1 = getVal('spd1') * 0.1;
+  const w2on = getChecked('enableWave2');
+  const amp2 = getVal('amp2');
+  const wl2  = getVal('wl2');
+  const spd2 = getVal('spd2') * 0.1;
+
+  const pts = [];
+  for (let x = 0; x <= W; x++) {
+    let h = waveHeight(x, t, amp1, wl1, spd1, 1);
+    if (w2on) h += waveHeight(x, t, amp2, wl2, spd2, -1);
+    pts.push(mid - h);
+  }
+
+  // Ocean fill
+  if (getChecked('fillOcean')) {
+    const oceanGrad = ctx.createLinearGradient(0, mid, 0, H);
+    oceanGrad.addColorStop(0, 'rgba(6,90,160,0.85)');
+    oceanGrad.addColorStop(0.5, 'rgba(4,60,120,0.9)');
+    oceanGrad.addColorStop(1, 'rgba(2,30,70,0.95)');
+    ctx.fillStyle = oceanGrad;
+    ctx.beginPath();
+    ctx.moveTo(0, pts[0]);
+    for (let x = 1; x <= W; x++) ctx.lineTo(x, pts[x]);
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Wave 1 line
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = '#38bdf8';
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.moveTo(0, pts[0]);
+  for (let x = 1; x <= W; x++) ctx.lineTo(x, pts[x]);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Wave 2 line (dashed, separate display)
+  if (w2on) {
+    const pts2 = [];
+    for (let x = 0; x <= W; x++) {
+      const h = waveHeight(x, t, amp2, wl2, spd2, -1);
+      pts2.push(mid - h);
+    }
+    ctx.strokeStyle = 'rgba(52,211,153,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([8, 5]);
+    ctx.beginPath();
+    ctx.moveTo(0, pts2[0]);
+    for (let x = 1; x <= W; x++) ctx.lineTo(x, pts2[x]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Equilibrium line
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6,4]);
+  ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(W, mid); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Info overlay
+  if (getChecked('showInfo')) {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(8, 8, 260, 64);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '11px monospace';
+    ctx.fillText(`Wave 1 — A:${amp1}px  λ:${wl1}px  v:${(spd1*10).toFixed(1)}×`, 14, 24);
+    if (w2on) {
+      ctx.fillStyle = '#34d399';
+      ctx.fillText(`Wave 2 — A:${amp2}px  λ:${wl2}px  v:${(spd2*10).toFixed(1)}×`, 14, 40);
+      ctx.fillStyle = '#facc15';
+      ctx.fillText(`Interference: ACTIVE`, 14, 56);
+    } else {
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(`Wave 2: OFF (enable for interference)`, 14, 40);
+    }
+  }
+
+  // Update stats
+  const maxW1 = amp1;
+  const maxW2 = w2on ? amp2 : 0;
+  const maxComb = w2on ? amp1 + amp2 : amp1;
+  document.getElementById('peakH1').textContent = maxW1.toFixed(0) + ' px';
+  document.getElementById('peakH2').textContent = w2on ? maxW2.toFixed(0) + ' px' : '—';
+  document.getElementById('peakComb').textContent = maxComb.toFixed(0) + ' px';
+  const k1 = (2*Math.PI)/wl1;
+  document.getElementById('phaseDisp').textContent = (k1 * t * spd1 % (2*Math.PI)).toFixed(2);
+}
+
+function animate() {
+  if (!paused) {
+    t += 1;
+    drawWave();
+  }
+  animId = requestAnimationFrame(animate);
+}
+
+document.getElementById('pauseBtn').addEventListener('click', function() {
+  paused = !paused;
+  this.textContent = paused ? 'Resume' : 'Pause';
+  this.classList.toggle('bg-green-700', paused);
+  this.classList.toggle('bg-blue-700', !paused);
+});
+
+// Resize canvas to parent
+function resizeCanvas() {
+  const container = canvas.parentElement;
+  canvas.width = container.clientWidth;
+  drawWave();
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+animate();
+</script>
+</body>
+</html>
